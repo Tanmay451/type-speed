@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Core Typer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background-color: #1a1a1a;
+            border: 2px solid #333;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .modal {
+            background-color: rgba(10, 10, 10, 0.85);
+            backdrop-filter: blur(5px);
+        }
+        .btn-cyber {
+            background: linear-gradient(45deg, #00ffff, #ff00ff);
+            border: none;
+            color: white;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px #00ffff, 0 0 20px #ff00ff;
+        }
+        .btn-cyber:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 15px #00ffff, 0 0 30px #ff00ff, 0 0 45px #00ffff;
+        }
+        .hud-item {
+            background: rgba(26, 26, 26, 0.7);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 8px 16px;
+            text-shadow: 0 0 5px rgba(0, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex items-center justify-center">
+
+    <div id="game-container" class="relative w-full h-full">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Heads-Up Display (HUD) -->
+        <div class="absolute top-4 left-4 right-4 flex justify-between items-center text-lg z-10">
+            <div class="hud-item font-orbitron">SCORE: <span id="score">0</span></div>
+            <div class="hud-item font-orbitron">LEVEL: <span id="level">1</span></div>
+            <div class="hud-item font-orbitron">LIVES: <span id="lives">5</span></div>
+        </div>
+
+        <!-- Current Typing Display -->
+        <div id="typing-display" class="absolute bottom-8 left-1/2 -translate-x-1/2 text-2xl font-bold tracking-widest text-cyan-300" style="text-shadow: 0 0 8px #00ffff;"></div>
+
+        <!-- Start/Game Over Modal -->
+        <div id="modal" class="absolute inset-0 flex items-center justify-center modal z-20">
+            <div id="modal-content" class="text-center p-8 border-2 border-cyan-400 rounded-lg shadow-lg bg-gray-900/50">
+                <h1 id="modal-title" class="text-6xl font-orbitron mb-4 text-cyan-300" style="text-shadow: 0 0 10px #00ffff;">Core Typer</h1>
+                <p id="modal-text" class="text-xl mb-6">Type the words before they reach the core.</p>
+                <p id="final-score" class="text-3xl font-orbitron mb-6 hidden"></p>
+                <button id="start-button" class="btn-cyber font-orbitron text-2xl px-8 py-4 rounded-md">Start Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('level');
+        const livesEl = document.getElementById('lives');
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalText = document.getElementById('modal-text');
+        const finalScoreEl = document.getElementById('final-score');
+        const startButton = document.getElementById('start-button');
+        const typingDisplay = document.getElementById('typing-display');
+
+        // --- Game Configuration ---
+        const wordList = [
+            'code', 'debug', 'deploy', 'agile', 'data', 'cloud', 'server', 'client', 'network',
+            'react', 'angular', 'vue', 'node', 'python', 'java', 'swift', 'kotlin', 'rust',
+            'html', 'css', 'script', 'query', 'api', 'json', 'token', 'auth', 'git', 'commit',
+            'branch', 'merge', 'error', 'bug', 'feature', 'sprint', 'scrum', 'kanban', 'ci', 'cd',
+            'docker', 'kubernetes', 'linux', 'shell', 'kernel', 'binary', 'hex', 'pixel', 'vector',
+            'font', 'style', 'grid', 'flex', 'margin', 'padding', 'border', 'async', 'await',
+            'promise', 'callback', 'module', 'import', 'export', 'class', 'object', 'array', 'string'
+        ];
+        const CORE_RADIUS = 20;
+        const INITIAL_LIVES = 5;
+        const WORDS_PER_LEVEL = 10;
+
+        // --- Game State ---
+        let words = [];
+        let score = 0;
+        let lives = INITIAL_LIVES;
+        let level = 1;
+        let baseSpeed = 0.5;
+        let spawnInterval = 2000; // ms
+        let wordsClearedThisLevel = 0;
+        let currentTyping = '';
+        let activeWord = null;
+        let gameRunning = false;
+        let spawnTimer;
+
+        // --- Utility Functions ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // --- Game Objects ---
+        class Word {
+            constructor(text) {
+                this.text = text;
+                this.spawn();
+                
+                // Calculate velocity vector towards the center
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const angle = Math.atan2(centerY - this.y, centerX - this.x);
+                const speed = baseSpeed + (level * 0.1);
+                this.dx = Math.cos(angle) * speed;
+                this.dy = Math.sin(angle) * speed;
+            }
+
+            // Set initial position at a random edge
+            spawn() {
+                const side = Math.floor(Math.random() * 4);
+                switch (side) {
+                    case 0: // Top
+                        this.x = Math.random() * canvas.width;
+                        this.y = -20;
+                        break;
+                    case 1: // Right
+                        this.x = canvas.width + 20;
+                        this.y = Math.random() * canvas.height;
+                        break;
+                    case 2: // Bottom
+                        this.x = Math.random() * canvas.width;
+                        this.y = canvas.height + 20;
+                        break;
+                    case 3: // Left
+                        this.x = -20;
+                        this.y = Math.random() * canvas.height;
+                        break;
+                }
+            }
+
+            draw() {
+                ctx.font = '20px "Roboto Mono"';
+                if (this === activeWord) {
+                    ctx.fillStyle = '#00ffff'; // Cyan for active word
+                    ctx.shadowColor = '#00ffff';
+                    ctx.shadowBlur = 10;
+                } else {
+                    ctx.fillStyle = '#e0e0e0'; // White for other words
+                    ctx.shadowBlur = 0;
+                }
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.shadowBlur = 0; // Reset shadow
+            }
+
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+            }
+        }
+        
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.speedX = Math.random() * 3 - 1.5;
+                this.speedY = Math.random() * 3 - 1.5;
+                this.color = `hsl(${Math.random() * 60 + 180}, 100%, 70%)`; // Shades of cyan/blue
+                this.life = 100;
+            }
+            
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.life -= 2;
+            }
+            
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.life / 100;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        
+        let particles = [];
+        
+        function createExplosion(x, y) {
+            for (let i = 0; i < 30; i++) {
+                particles.push(new Particle(x, y));
+            }
+        }
+
+        // --- Game Logic ---
+        function spawnWord() {
+            if (!gameRunning) return;
+            const randomWord = wordList[Math.floor(Math.random() * wordList.length)];
+            words.push(new Word(randomWord));
+        }
+
+        function updateUI() {
+            scoreEl.textContent = score;
+            levelEl.textContent = level;
+            livesEl.textContent = lives;
+            typingDisplay.textContent = currentTyping;
+        }
+
+        function levelUp() {
+            level++;
+            baseSpeed += 0.1;
+            wordsClearedThisLevel = 0;
+            spawnInterval = Math.max(500, spawnInterval - 200); // Decrease spawn time, min 500ms
+            
+            // Restart the spawner with the new interval
+            clearInterval(spawnTimer);
+            spawnTimer = setInterval(spawnWord, spawnInterval);
+        }
+        
+        function handleCorrectWord() {
+            score += activeWord.text.length * 10;
+            wordsClearedThisLevel++;
+            createExplosion(activeWord.x, activeWord.y);
+            
+            words = words.filter(word => word !== activeWord);
+            currentTyping = '';
+            activeWord = null;
+            
+            if (wordsClearedThisLevel >= WORDS_PER_LEVEL) {
+                levelUp();
+            }
+        }
+
+        function handleInput(e) {
+            if (!gameRunning) return;
+            
+            // Prevent browser shortcuts
+            e.preventDefault();
+
+            const key = e.key;
+
+            if (key === 'Backspace') {
+                currentTyping = currentTyping.slice(0, -1);
+                // If we were typing an active word, it might no longer be active
+                if (activeWord && !activeWord.text.startsWith(currentTyping)) {
+                    activeWord = null;
+                }
+            } else if (key.length === 1 && key.match(/[a-z]/i)) {
+                currentTyping += key.toLowerCase();
+            } else {
+                return; // Ignore other keys like Shift, Ctrl, etc.
+            }
+            
+            // If there's no active word, find one that matches the current typing
+            if (!activeWord) {
+                // Find the closest word that starts with the typed string
+                let potentialWords = words.filter(word => word.text.startsWith(currentTyping));
+                if (potentialWords.length > 0) {
+                    const centerX = canvas.width / 2;
+                    const centerY = canvas.height / 2;
+                    potentialWords.sort((a, b) => {
+                        const distA = Math.hypot(a.x - centerX, a.y - centerY);
+                        const distB = Math.hypot(b.x - centerX, b.y - centerY);
+                        return distA - distB;
+                    });
+                    activeWord = potentialWords[0];
+                }
+            }
+            
+            // If there is an active word, check for completion
+            if (activeWord) {
+                if (activeWord.text === currentTyping) {
+                    handleCorrectWord();
+                } else if (!activeWord.text.startsWith(currentTyping)) {
+                    // Mismatch, reset active word
+                    activeWord = null;
+                    // We need to re-evaluate if the current typing matches any other word
+                    // This is a bit complex, for now, we just de-select. A better implementation
+                    // might try to find a new match immediately.
+                }
+            }
+
+            updateUI();
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            clearInterval(spawnTimer);
+            modal.style.display = 'flex';
+            modalTitle.textContent = 'Game Over';
+            modalText.style.display = 'none';
+            finalScoreEl.textContent = `FINAL SCORE: ${score}`;
+            finalScoreEl.style.display = 'block';
+            startButton.textContent = 'Try Again';
+        }
+        
+        function resetGame() {
+            score = 0;
+            lives = INITIAL_LIVES;
+            level = 1;
+            baseSpeed = 0.5;
+            spawnInterval = 2000;
+            wordsClearedThisLevel = 0;
+            words = [];
+            particles = [];
+            currentTyping = '';
+            activeWord = null;
+            updateUI();
+        }
+
+        function startGame() {
+            resetGame();
+            gameRunning = true;
+            modal.style.display = 'none';
+            spawnTimer = setInterval(spawnWord, spawnInterval);
+            spawnWord(); // Spawn the first word immediately
+            gameLoop();
+        }
+
+        // --- Main Game Loop ---
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            requestAnimationFrame(gameLoop);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Core
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, CORE_RADIUS, 0, Math.PI * 2);
+            const coreGradient = ctx.createRadialGradient(centerX, centerY, CORE_RADIUS * 0.5, centerX, centerY, CORE_RADIUS);
+            coreGradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');
+            coreGradient.addColorStop(1, 'rgba(100, 0, 0, 0.5)');
+            ctx.fillStyle = coreGradient;
+            ctx.fill();
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Update and draw words
+            for (let i = words.length - 1; i >= 0; i--) {
+                const word = words[i];
+                word.update();
+                word.draw();
+
+                // Check for collision with core
+                const distance = Math.hypot(word.x - centerX, word.y - centerY);
+                if (distance < CORE_RADIUS) {
+                    words.splice(i, 1);
+                    lives--;
+                    if (activeWord === word) {
+                        activeWord = null;
+                        currentTyping = '';
+                    }
+                    updateUI();
+                    if (lives <= 0) {
+                        gameOver();
+                        return; // Stop the loop
+                    }
+                }
+            }
+            
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update();
+                p.draw();
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('resize', resizeCanvas);
+        startButton.addEventListener('click', startGame);
+        document.addEventListener('keydown', handleInput);
+
+        // --- Initial Setup ---
+        resizeCanvas();
+        updateUI();
+
+    </script>
+</body>
+</html>
