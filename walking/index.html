@@ -124,8 +124,6 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const restartButton = document.getElementById('restart-button');
-        
-        // NEW: Get references to the new elements
         const fullscreenButton = document.getElementById('fullscreen-button');
         const appWrapper = document.getElementById('app-wrapper');
 
@@ -142,6 +140,7 @@
 
         // --- Game State Variables ---
         let player, platforms, coins, enemies, camera;
+        let healthPacks; // NEW: To store health pack items
         let score, lives, gameOver;
         
         // --- Procedural Generation Variables ---
@@ -175,25 +174,23 @@
             gameOver = false;
             restartButton.style.display = 'none';
 
-            // Start with a single ground platform
             platforms = [
                 { x: 0, y: 550, width: GAME_WIDTH + 200, height: 50 }
             ];
             lastPlatform = platforms[0];
             
             coins = [];
+            healthPacks = []; // NEW: Initialize health packs array
             enemies = [
-                // Add one enemy at the start
                 { x: 500, y: 510, width: 40, height: 40, dx: -ENEMY_SPEED, active: true, color: '#d63447' }
             ];
 
             generatedUntilX = lastPlatform.x + lastPlatform.width;
         }
         
-        // NEW: Function to toggle fullscreen mode
+        // --- Fullscreen Function ---
         function toggleFullScreen() {
           if (!document.fullscreenElement) {
-            // Request fullscreen on the app wrapper
             appWrapper.requestFullscreen().catch(err => {
               alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
             });
@@ -220,15 +217,12 @@
 
         // --- Procedural Generation ---
         function generateWorld() {
-            // Generate new chunks of the world when player gets close to the edge
             while (generatedUntilX < player.x + GAME_WIDTH * 2) {
-                const gap = 100 + Math.random() * 150; // Gap between platforms
-                const width = 150 + Math.random() * 250; // Width of the new platform
-                const heightChange = (Math.random() * 200) - 100; // How much higher/lower
+                const gap = 100 + Math.random() * 150;
+                const width = 150 + Math.random() * 250;
+                const heightChange = (Math.random() * 200) - 100;
                 
-                let y = lastPlatform.y + heightChange;
-                // Clamp platform height to be reachable
-                y = Math.max(200, Math.min(y, 550));
+                let y = Math.max(200, Math.min(lastPlatform.y + heightChange, 550));
 
                 const newPlatform = {
                     x: lastPlatform.x + lastPlatform.width + gap,
@@ -238,8 +232,7 @@
                 };
                 platforms.push(newPlatform);
 
-                // Add coins on the new platform
-                if (Math.random() > 0.3) { // 70% chance of coins
+                if (Math.random() > 0.3) {
                     for (let i = 0; i < width / 50; i++) {
                         coins.push({
                             x: newPlatform.x + (i * 50) + 15,
@@ -248,10 +241,19 @@
                         });
                     }
                 }
+                
+                // NEW: Add a chance to spawn a health pack on a new platform
+                const healthPackChance = 0.08; // 8% chance per platform
+                if (Math.random() < healthPackChance) {
+                    healthPacks.push({
+                        x: newPlatform.x + width / 2 - 15, // Centered on platform
+                        y: newPlatform.y - 45,
+                        width: 30, height: 30, active: true
+                    });
+                }
 
-                // Add an enemy on the new platform
-                const enemyChance = 0.1 + (score / 5000); // Chance increases with score
-                if (Math.random() < enemyChance && width > 100) { // Only on wider platforms
+                const enemyChance = 0.1 + (score / 5000);
+                if (Math.random() < enemyChance && width > 100) {
                     enemies.push({
                         x: newPlatform.x + width / 2,
                         y: newPlatform.y - 40,
@@ -266,17 +268,16 @@
         }
 
         function cleanupOldObjects() {
-            // Remove objects that are far off-screen to the left to save memory
             const cleanupMargin = 400;
             platforms = platforms.filter(p => p.x + p.width > camera.x - cleanupMargin);
             coins = coins.filter(c => c.x + c.width > camera.x - cleanupMargin);
             enemies = enemies.filter(e => e.x + e.width > camera.x - cleanupMargin);
+            healthPacks = healthPacks.filter(hp => hp.x + hp.width > camera.x - cleanupMargin); // NEW: Cleanup health packs
         }
 
         // --- Update Functions ---
         function update() {
             if (gameOver) return;
-
             updatePlayer();
             updateEnemies();
             checkCollisions();
@@ -286,7 +287,6 @@
         }
 
         function updatePlayer() {
-            // Horizontal movement
             if (keys.right) {
                 player.dx = PLAYER_SPEED;
                 player.direction = 'right';
@@ -298,26 +298,21 @@
             }
             player.x += player.dx;
 
-            // Animation frame update for walking
             if (player.dx !== 0 && !player.isJumping) {
                 player.frameCounter++;
-                if (player.frameCounter > 4) { // Adjust for animation speed
-                    player.animationFrame = (player.animationFrame + 1) % 4; // 4 frames for walk cycle
+                if (player.frameCounter > 4) {
+                    player.animationFrame = (player.animationFrame + 1) % 4;
                     player.frameCounter = 0;
                 }
             } else if (player.dx === 0) {
-                player.animationFrame = 0; // Reset to idle frame when still
+                player.animationFrame = 0;
             }
 
-            // Apply gravity
             player.dy += GRAVITY;
             player.y += player.dy;
             
             if (player.x < 0) player.x = 0;
-
-            if (player.y > GAME_HEIGHT) {
-                playerLosesLife();
-            }
+            if (player.y > GAME_HEIGHT) playerLosesLife();
         }
 
         function updateEnemies() {
@@ -325,7 +320,6 @@
                 if (!enemy.active) return;
                 enemy.x += enemy.dx;
 
-                // Simple patrol AI: turn around at platform edges
                 let onAPlatform = false;
                 let currentPlatform;
                 for(const p of platforms) {
@@ -339,9 +333,6 @@
                     if(enemy.x < currentPlatform.x || enemy.x + enemy.width > currentPlatform.x + currentPlatform.width) {
                        enemy.dx *= -1;
                     }
-                } else {
-                    // If not on a platform (e.g., spawned in the air), just move
-                    // A more complex game would have them fall with gravity
                 }
             });
         }
@@ -353,7 +344,6 @@
 
         // --- Collision Detection ---
         function checkCollisions() {
-            // Platform collisions
             let onPlatform = false;
             platforms.forEach(platform => {
                 if (player.dy > 0 && isColliding(player, platform) && (player.y + player.height) < platform.y + player.dy + 1) {
@@ -364,21 +354,27 @@
                 }
             });
 
-            // Coin collisions
             coins.forEach(coin => {
                 if (coin.active && isColliding(player, coin)) {
                     coin.active = false;
                     score += 10;
                 }
             });
+            
+            // NEW: Check for collisions with health packs
+            healthPacks.forEach(pack => {
+                if (pack.active && isColliding(player, pack)) {
+                    pack.active = false;
+                    lives++; // Increase player lives
+                }
+            });
 
-            // Enemy collisions
             enemies.forEach(enemy => {
                 if (!enemy.active) return;
                 if (isColliding(player, enemy)) {
                     if (player.dy > 0 && player.y + player.height < enemy.y + player.dy + 20) {
                         enemy.active = false;
-                        player.dy = -8; // small bounce
+                        player.dy = -8;
                         score += 50;
                     } else { 
                         playerLosesLife();
@@ -417,6 +413,7 @@
             
             drawBackground();
             drawPlatforms();
+            drawHealthPacks(); // NEW: Call the draw function for health packs
             drawCoins();
             drawEnemies();
             drawPlayer();
@@ -430,23 +427,28 @@
             }
         }
 
+        // NEW: Function to draw health packs
+        function drawHealthPacks() {
+            healthPacks.forEach(pack => {
+                if (pack.active) {
+                    // Draw a red box
+                    ctx.fillStyle = '#e62e2e';
+                    ctx.fillRect(pack.x, pack.y, pack.width, pack.height);
+                    // Draw a white cross
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(pack.x + pack.width * 0.4, pack.y + pack.height * 0.15, pack.width * 0.2, pack.height * 0.7);
+                    ctx.fillRect(pack.x + pack.width * 0.15, pack.y + pack.height * 0.4, pack.width * 0.7, pack.height * 0.2);
+                }
+            });
+        }
+
         function drawPlayer() {
             ctx.save();
             ctx.translate(player.x + player.width / 2, player.y + player.height);
+            if (player.direction === 'left') ctx.scale(-1, 1);
 
-            if (player.direction === 'left') {
-                ctx.scale(-1, 1);
-            }
-
-            const skin = '#f0c0a0';
-            const hair = '#6a341a';
-            const shirt = '#e62e2e';
-            const overalls = '#3a86ff';
-            const shoes = '#784421';
-            const gloves = '#ffffff';
-
-            let legOffset = 0;
-            let armAngle = 0;
+            const skin = '#f0c0a0', hair = '#6a341a', shirt = '#e62e2e', overalls = '#3a86ff', shoes = '#784421', gloves = '#ffffff';
+            let legOffset = 0, armAngle = 0;
 
             if (player.isJumping) {
                 legOffset = -5;
@@ -479,7 +481,6 @@
             ctx.fillStyle = shirt;
             ctx.fillRect(-18, -85, 36, 10);
             ctx.fillRect(-22, -75, 44, 5);
-
             ctx.save();
             ctx.translate(0, -50);
             ctx.rotate(armAngle);
@@ -490,7 +491,6 @@
             ctx.arc(5, 20, 6, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
-
             ctx.restore();
         }
 
@@ -570,11 +570,7 @@
         // --- Event Listeners ---
         document.addEventListener('keydown', keyDownHandler);
         document.addEventListener('keyup', keyUpHandler);
-        restartButton.addEventListener('click', () => {
-            init();
-        });
-        
-        // NEW: Add event listener for the fullscreen button
+        restartButton.addEventListener('click', () => init());
         fullscreenButton.addEventListener('click', toggleFullScreen);
 
         // --- Start Game ---
