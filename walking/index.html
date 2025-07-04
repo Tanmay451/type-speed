@@ -133,14 +133,18 @@
         canvas.width = GAME_WIDTH;
         canvas.height = GAME_HEIGHT;
 
-        const GRAVITY = 0.6;
-        const PLAYER_SPEED = 5;
-        const JUMP_FORCE = -15;
-        const ENEMY_SPEED = 1.5;
+        // NEW: Base speed constants. These are the starting values.
+        const BASE_GRAVITY = 0.6;
+        const BASE_PLAYER_SPEED = 5;
+        const BASE_ENEMY_SPEED = 1.5;
+        const JUMP_FORCE = -15; // Jump force can remain constant for predictability
+
+        // NEW: Variables to hold the current, dynamic speed values
+        let currentGravity, currentPlayerSpeed, currentEnemySpeed;
 
         // --- Game State Variables ---
         let player, platforms, coins, enemies, camera;
-        let healthPacks; // NEW: To store health pack items
+        let healthPacks;
         let score, lives, gameOver;
         
         // --- Procedural Generation Variables ---
@@ -180,9 +184,10 @@
             lastPlatform = platforms[0];
             
             coins = [];
-            healthPacks = []; // NEW: Initialize health packs array
+            healthPacks = [];
             enemies = [
-                { x: 500, y: 510, width: 40, height: 40, dx: -ENEMY_SPEED, active: true, color: '#d63447' }
+                // NEW: Use base speed for initial enemy
+                { x: 500, y: 510, width: 40, height: 40, dx: -BASE_ENEMY_SPEED, active: true, color: '#d63447' }
             ];
 
             generatedUntilX = lastPlatform.x + lastPlatform.width;
@@ -242,11 +247,10 @@
                     }
                 }
                 
-                // NEW: Add a chance to spawn a health pack on a new platform
-                const healthPackChance = 0.08; // 8% chance per platform
+                const healthPackChance = 0.08;
                 if (Math.random() < healthPackChance) {
                     healthPacks.push({
-                        x: newPlatform.x + width / 2 - 15, // Centered on platform
+                        x: newPlatform.x + width / 2 - 15,
                         y: newPlatform.y - 45,
                         width: 30, height: 30, active: true
                     });
@@ -258,7 +262,8 @@
                         x: newPlatform.x + width / 2,
                         y: newPlatform.y - 40,
                         width: 40, height: 40,
-                        dx: -ENEMY_SPEED, active: true, color: '#d63447'
+                        dx: -BASE_ENEMY_SPEED, // NEW: Use base speed for new enemies
+                        active: true, color: '#d63447'
                     });
                 }
                 
@@ -272,12 +277,21 @@
             platforms = platforms.filter(p => p.x + p.width > camera.x - cleanupMargin);
             coins = coins.filter(c => c.x + c.width > camera.x - cleanupMargin);
             enemies = enemies.filter(e => e.x + e.width > camera.x - cleanupMargin);
-            healthPacks = healthPacks.filter(hp => hp.x + hp.width > camera.x - cleanupMargin); // NEW: Cleanup health packs
+            healthPacks = healthPacks.filter(hp => hp.x + hp.width > camera.x - cleanupMargin);
         }
 
         // --- Update Functions ---
         function update() {
             if (gameOver) return;
+
+            // NEW: Calculate dynamic speeds based on score
+            // The logic increases speed by 10% for every 200 points.
+            // We use Math.min to cap the speed at a maximum value.
+            const speedMultiplier = 1 + (score / 2000);
+            currentPlayerSpeed = Math.min(BASE_PLAYER_SPEED * speedMultiplier, BASE_PLAYER_SPEED * 1.8);
+            currentEnemySpeed = Math.min(BASE_ENEMY_SPEED * speedMultiplier, BASE_ENEMY_SPEED * 2.5);
+            currentGravity = Math.min(BASE_GRAVITY * speedMultiplier, BASE_GRAVITY * 1.5);
+
             updatePlayer();
             updateEnemies();
             checkCollisions();
@@ -287,11 +301,12 @@
         }
 
         function updatePlayer() {
+            // NEW: Use dynamic speed
             if (keys.right) {
-                player.dx = PLAYER_SPEED;
+                player.dx = currentPlayerSpeed;
                 player.direction = 'right';
             } else if (keys.left) {
-                player.dx = -PLAYER_SPEED;
+                player.dx = -currentPlayerSpeed;
                 player.direction = 'left';
             } else {
                 player.dx = 0;
@@ -308,7 +323,8 @@
                 player.animationFrame = 0;
             }
 
-            player.dy += GRAVITY;
+            // NEW: Use dynamic gravity
+            player.dy += currentGravity;
             player.y += player.dy;
             
             if (player.x < 0) player.x = 0;
@@ -318,6 +334,9 @@
         function updateEnemies() {
             enemies.forEach(enemy => {
                 if (!enemy.active) return;
+                
+                // NEW: Update enemy speed every frame based on its direction
+                enemy.dx = Math.sign(enemy.dx) * currentEnemySpeed;
                 enemy.x += enemy.dx;
 
                 let onAPlatform = false;
@@ -361,11 +380,10 @@
                 }
             });
             
-            // NEW: Check for collisions with health packs
             healthPacks.forEach(pack => {
                 if (pack.active && isColliding(player, pack)) {
                     pack.active = false;
-                    lives++; // Increase player lives
+                    lives++;
                 }
             });
 
@@ -413,7 +431,7 @@
             
             drawBackground();
             drawPlatforms();
-            drawHealthPacks(); // NEW: Call the draw function for health packs
+            drawHealthPacks();
             drawCoins();
             drawEnemies();
             drawPlayer();
@@ -426,15 +444,12 @@
                 drawGameOver();
             }
         }
-
-        // NEW: Function to draw health packs
+        
         function drawHealthPacks() {
             healthPacks.forEach(pack => {
                 if (pack.active) {
-                    // Draw a red box
                     ctx.fillStyle = '#e62e2e';
                     ctx.fillRect(pack.x, pack.y, pack.width, pack.height);
-                    // Draw a white cross
                     ctx.fillStyle = 'white';
                     ctx.fillRect(pack.x + pack.width * 0.4, pack.y + pack.height * 0.15, pack.width * 0.2, pack.height * 0.7);
                     ctx.fillRect(pack.x + pack.width * 0.15, pack.y + pack.height * 0.4, pack.width * 0.7, pack.height * 0.2);
