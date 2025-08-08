@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rolling Tic Tac Toe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: linear-gradient(to bottom right, #1e3a8a, #9333ea);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: sans-serif;
+      overflow: hidden;
+      position: relative;
+    }
+    .cell {
+      width: 80px;
+      height: 80px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
+      cursor: pointer;
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+    .cell:hover {
+      background-color: rgba(255, 255, 255, 0.15);
+      transform: scale(1.05);
+    }
+    .x-mark {
+      color: #fbbf24;
+      font-weight: bold;
+    }
+    .o-mark {
+      color: #34d399;
+      font-weight: bold;
+    }
+    .winner {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #fff;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .character {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      animation: moveCharacter linear infinite;
+    }
+    @keyframes moveCharacter {
+      0% { transform: translate(var(--start-x), var(--start-y)); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translate(var(--end-x), var(--end-y)); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="characters"></div>
+  <div id="game" class="bg-white bg-opacity-10 rounded-2xl p-6 shadow-xl relative z-10">
+    <h1 class="text-center text-white text-3xl font-bold mb-4">Rolling Tic Tac Toe</h1>
+    <div id="board" class="grid grid-cols-3 gap-2"></div>
+    <p id="status" class="text-white text-center mt-4"></p>
+    <div id="winner-message" class="winner hidden"></div>
+    <div class="flex justify-center mt-4">
+      <button onclick="resetGame()" class="bg-yellow-400 px-4 py-2 rounded-lg text-black font-bold hover:bg-yellow-500">Reset</button>
+    </div>
+  </div>
+
+  <script>
+    const size = 3;
+    const maxMarks = 3;
+    let board = Array(size).fill().map(() => Array(size).fill(null));
+    let moves = { X: [], O: [] };
+    let currentPlayer = 'X';
+    let gameOver = false;
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const winnerEl = document.getElementById('winner-message');
+
+    function renderBoard() {
+      boardEl.innerHTML = '';
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell bg-white bg-opacity-20 rounded-xl';
+          if (board[r][c] === 'X') cell.innerHTML = `<span class="x-mark">X</span>`;
+          if (board[r][c] === 'O') cell.innerHTML = `<span class="o-mark">O</span>`;
+          if (!gameOver) {
+            cell.addEventListener('click', () => handleMove(r, c));
+          }
+          boardEl.appendChild(cell);
+        }
+      }
+    }
+
+    function handleMove(row, col) {
+      if (gameOver || board[row][col]) return;
+
+      board[row][col] = currentPlayer;
+      moves[currentPlayer].push([row, col]);
+
+      if (moves[currentPlayer].length > maxMarks) {
+        const [oldR, oldC] = moves[currentPlayer].shift();
+        board[oldR][oldC] = null;
+      }
+
+      if (checkWinner()) {
+        statusEl.textContent = '';
+        winnerEl.textContent = `🎉 Player ${currentPlayer} wins!`;
+        winnerEl.classList.remove('hidden');
+        gameOver = true;
+      } else {
+        currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+        statusEl.textContent = `Player ${currentPlayer}'s turn`;
+      }
+
+      renderBoard();
+    }
+
+    function checkWinner() {
+      const lines = [];
+      lines.push(...board);
+      for (let c = 0; c < size; c++) lines.push(board.map(row => row[c]));
+      lines.push(board.map((_, i) => board[i][i]));
+      lines.push(board.map((_, i) => board[i][size - 1 - i]));
+      return lines.some(line => line.every(cell => cell === currentPlayer));
+    }
+
+    function resetGame() {
+      board = Array(size).fill().map(() => Array(size).fill(null));
+      moves = { X: [], O: [] };
+      currentPlayer = 'X';
+      gameOver = false;
+      statusEl.textContent = `Player ${currentPlayer}'s turn`;
+      winnerEl.classList.add('hidden');
+      renderBoard();
+    }
+
+    function spawnCharacters() {
+      const container = document.getElementById('characters');
+      const images = [
+        'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',
+        'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif',
+        'https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif',
+        'https://media.giphy.com/media/26AHONQ79FdWZhAI0/giphy.gif'
+      ];
+      setInterval(() => {
+        const img = document.createElement('img');
+        img.src = images[Math.floor(Math.random() * images.length)];
+        img.className = 'character';
+        img.style.setProperty('--start-x', `${Math.random() * window.innerWidth}px`);
+        img.style.setProperty('--start-y', `${Math.random() * window.innerHeight}px`);
+        img.style.setProperty('--end-x', `${Math.random() * window.innerWidth - 100}px`);
+        img.style.setProperty('--end-y', `${Math.random() * window.innerHeight - 100}px`);
+        img.style.animationDuration = `${5 + Math.random() * 5}s`;
+        container.appendChild(img);
+        setTimeout(() => container.removeChild(img), 10000);
+      }, 2000);
+    }
+
+    statusEl.textContent = `Player ${currentPlayer}'s turn`;
+    renderBoard();
+    spawnCharacters();
+  </script>
+</body>
+</html>
